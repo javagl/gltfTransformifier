@@ -5,9 +5,9 @@ Convert a glTF asset into code that uses [glTF-Transform](https://github.com/don
 
 ### Setup:
 
-`git clone https://github.com/javagl/gltfTransformifier.git`
-`cd gltfTransformifier`
-`npm install`
+- `git clone https://github.com/javagl/gltfTransformifier.git`
+- `cd gltfTransformifier`
+- `npm install`
 
 ### Running
 
