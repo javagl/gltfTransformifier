@@ -10,7 +10,7 @@ export class TypedArrays {
     return s;
   }
 
-  private static createConstructorString(array: TypedArray) {
+  static createConstructorString(array: TypedArray) {
     if (array.constructor === Float32Array) {
       return `Float32Array`;
     }

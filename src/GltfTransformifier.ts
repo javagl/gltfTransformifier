@@ -162,10 +162,14 @@ export class GltfTransformifier {
         if (array.length > config.externalAccessorsThreshold) {
           externalAccessors[`accessor${i}`] = array;
           const resolvedName = `path.resolve(__dirname, 'accessor${i}')`;
+          const constructorString = TypedArrays.createConstructorString(array);
           sb.addLine(
             `const accessor${i}_data = fs.readFileSync(${resolvedName});`
           );
-          sb.addLine(`accessor${i}.setArray(accessor${i}_data);`);
+          sb.addLine(
+            `accessor${i}.setArray(new ${constructorString}(accessor${i}_data.buffer.slice(`,
+            `accessor${i}_data.byteOffset, accessor${i}_data.byteOffset + accessor${i}_data.byteLength)));`
+          );
         } else {
           const arrayString = TypedArrays.createFormattedString(
             array,
