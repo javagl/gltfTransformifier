@@ -1,4 +1,8 @@
+import fs from "fs";
+import path from "path";
+
 import { Document } from "@gltf-transform/core";
+import { TypedArray } from "@gltf-transform/core";
 
 import { Accessor } from "@gltf-transform/core";
 import { Animation } from "@gltf-transform/core";
@@ -14,20 +18,39 @@ import { Buffer as GltfBuffer } from "@gltf-transform/core";
 import { StringBuilder } from "./StringBuilder";
 import { TypedArrays } from "./TypedArrays";
 
-export class GltfTransformifier {
-  private document: Document;
-  private sb: StringBuilder;
+interface Config {
+  externalAccessorsThreshold: number;
+  externalImagesThreshold: number;
+}
 
-  private scenes: Scene[];
-  private nodes: Node[];
-  private cameras: Camera[];
-  private skins: Skin[];
-  private meshes: Mesh[];
-  private materials: Material[];
-  private textures: Texture[];
-  private animations: Animation[];
-  private accessors: Accessor[];
-  private buffers: GltfBuffer[];
+export interface Result {
+  code: string;
+  externalAccessors: { [key: string]: TypedArray };
+  externalImages: { [key: string]: Uint8Array };
+}
+
+export class GltfTransformifier {
+  private readonly config: Config = {
+    externalAccessorsThreshold: 1000,
+    externalImagesThreshold: 1000,
+  };
+
+  private readonly document: Document;
+  private readonly sb: StringBuilder;
+
+  private readonly scenes: Scene[];
+  private readonly nodes: Node[];
+  private readonly cameras: Camera[];
+  private readonly skins: Skin[];
+  private readonly meshes: Mesh[];
+  private readonly materials: Material[];
+  private readonly textures: Texture[];
+  private readonly animations: Animation[];
+  private readonly accessors: Accessor[];
+  private readonly buffers: GltfBuffer[];
+
+  private readonly externalAccessors: { [key: string]: TypedArray };
+  private readonly externalImages: { [key: string]: Uint8Array };
 
   constructor(document: Document) {
     this.document = document;
@@ -44,11 +67,15 @@ export class GltfTransformifier {
     this.animations = root.listAnimations();
     this.accessors = root.listAccessors();
     this.buffers = root.listBuffers();
+
+    this.externalAccessors = {};
+    this.externalImages = {};
   }
 
   private initStringBuilder() {
     const sb = this.sb;
     sb.addLine(`import fs from "fs";`);
+    sb.addLine(`import path from "path";`);
     sb.addLine(`import { NodeIO } from '@gltf-transform/core';`);
     sb.addLine(`import { Document } from '@gltf-transform/core';`);
     sb.addLine(`import { Accessor } from '@gltf-transform/core';`);
@@ -110,9 +137,11 @@ export class GltfTransformifier {
     if (this.accessors.length === 0) {
       return;
     }
+    const config = this.config;
     const sb = this.sb;
     const accessors = this.accessors;
     const buffers = this.buffers;
+    const externalAccessors = this.externalAccessors;
     sb.addLine(`// Accessors`);
     for (let i = 0; i < accessors.length; i++) {
       sb.addLine(`// Accessor ${i} of ${accessors.length}`);
@@ -130,8 +159,21 @@ export class GltfTransformifier {
 
       const array = accessors[i].getArray();
       if (array) {
-        const arrayString = TypedArrays.createString(array);
-        sb.addLine(`accessor${i}.setArray(${arrayString});`);
+        if (array.length > config.externalAccessorsThreshold) {
+          externalAccessors[`accessor${i}`] = array;
+          const resolvedName = `path.resolve(__dirname, 'accessor${i}')`;
+          sb.addLine(
+            `const accessor${i}_data = fs.readFileSync(${resolvedName});`
+          );
+          sb.addLine(`accessor${i}.setArray(accessor${i}_data);`);
+        } else {
+          const arrayString = TypedArrays.createFormattedString(
+            array,
+            sb.getIndent(),
+            accessors[i].getElementSize()
+          );
+          sb.addLine(`accessor${i}.setArray(${arrayString});`);
+        }
       }
       sb.addLine(``);
     }
@@ -142,15 +184,24 @@ export class GltfTransformifier {
     if (this.textures.length === 0) {
       return;
     }
+    const config = this.config;
     const sb = this.sb;
     const textures = this.textures;
+    const externalImages = this.externalImages;
     sb.addLine(`// Textures`);
     for (let i = 0; i < textures.length; i++) {
-      sb.addLine(`// Textures ${i} of ${textures.length}`);
+      sb.addLine(`// Texture ${i} of ${textures.length}`);
 
       const name = textures[i].getName();
       const uri = textures[i].getURI();
       const mimeType = textures[i].getMimeType();
+
+      let externalFileExtension = "";
+      if (mimeType === "image/jpeg") {
+        externalFileExtension = ".jpg";
+      } else if (mimeType === "image/png") {
+        externalFileExtension = ".png";
+      }
 
       sb.addLine(`const texture${i} = document.createTexture('${name}');`);
       sb.addLine(`texture${i}.setURI('${uri}');`);
@@ -158,8 +209,21 @@ export class GltfTransformifier {
 
       const image = textures[i].getImage();
       if (image) {
-        const imageString = TypedArrays.createString(image);
-        sb.addLine(`texture${i}.setImage(${imageString});`);
+        if (image.length > config.externalImagesThreshold) {
+          externalImages[`image${i}${externalFileExtension}`] = image;
+          const resolvedName = `path.resolve(__dirname, 'image${i}${externalFileExtension}')`;
+          sb.addLine(
+            `const image${i}_data = fs.readFileSync(${resolvedName});`
+          );
+          sb.addLine(`texture${i}.setImage(image${i}_data);`);
+        } else {
+          const imageString = TypedArrays.createFormattedString(
+            image,
+            sb.getIndent(),
+            10
+          );
+          sb.addLine(`texture${i}.setImage(${imageString});`);
+        }
       }
       sb.addLine(``);
     }
@@ -594,7 +658,7 @@ export class GltfTransformifier {
     }
   }
 
-  generate(outputFileName?: string): string {
+  generate(outputFileName?: string): Result {
     this.initStringBuilder();
     this.generateBuffers();
     this.generateAccessors();
@@ -611,7 +675,29 @@ export class GltfTransformifier {
     this.finishStringBuilder(
       outputFileName === undefined ? "gltfTransformifier.glb" : outputFileName
     );
-    return this.sb.toString();
+    const code = this.sb.toString();
+    return {
+      code: code,
+      externalAccessors: this.externalAccessors,
+      externalImages: this.externalImages,
+    };
+  }
+
+  write(outputFileName: string, result: Result) {
+    const outputDirectory = path.dirname(outputFileName);
+    if (!fs.existsSync(outputDirectory)) {
+      fs.mkdirSync(outputDirectory, { recursive: true });
+    }
+    fs.writeFileSync(outputFileName, result.code);
+    for (const key of Object.keys(result.externalAccessors)) {
+      const data = result.externalAccessors[key];
+      const externalFileName = path.join(outputDirectory, key);
+      fs.writeFileSync(externalFileName, data);
+    }
+    for (const key of Object.keys(result.externalImages)) {
+      const data = result.externalImages[key];
+      const externalFileName = path.join(outputDirectory, key);
+      fs.writeFileSync(externalFileName, data);
+    }
   }
 }
-

@@ -1,6 +1,3 @@
-import fs from "fs";
-import path from "path";
-
 import { NodeIO } from "@gltf-transform/core";
 
 import { KHRONOS_EXTENSIONS } from "@gltf-transform/extensions";
@@ -16,26 +13,24 @@ async function run(
   const g = new GltfTransformifier(document);
 
   console.log("Generating code from " + inputFileName);
-  const s = g.generate(glbFileName);
+  const result = g.generate(glbFileName);
 
   console.log("Writing code to " + outputFileName);
-  const outputDirName = path.dirname(outputFileName);
-  if (!fs.existsSync(outputDirName)) {
-    fs.mkdirSync(outputDirName, { recursive: true });
-  }
-  fs.writeFileSync(outputFileName, s);
+  g.write(outputFileName, result);
 }
 
 async function runTest(modelName: string) {
   const baseDir = "./data/";
   const inputDir = baseDir + modelName + "/glTF/";
   const inputFileName = inputDir + modelName + ".gltf";
-  const outputFileName = "./generated/generate" + modelName + ".ts";
+  const outputFileName =
+    "./generated/" + modelName + "/generate" + modelName + ".ts";
   const glbFileName = "./generated/" + modelName + ".glb";
   await run(inputFileName, outputFileName, glbFileName);
 }
 
 async function runAll() {
+  await runTest("Triangle");
   await runTest("BoxAnimated");
   await runTest("SimpleMorph");
   await runTest("SimpleSkin");
