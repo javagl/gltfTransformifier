@@ -167,7 +167,7 @@ export class GltfTransformifier {
             `const accessor${i}_data = fs.readFileSync(${resolvedName});`
           );
           sb.addLine(
-            `accessor${i}.setArray(new ${constructorString}(accessor${i}_data.buffer.slice(`,
+            `accessor${i}.setArray(new ${constructorString}(accessor${i}_data.buffer.slice(` +
             `accessor${i}_data.byteOffset, accessor${i}_data.byteOffset + accessor${i}_data.byteLength)));`
           );
         } else {
